@@ -1,6 +1,8 @@
 #include "slog.hpp"
 #include <filesystem>
 #include <iostream>
+#include <string_view>
+#include <unordered_map>
 
 #ifdef _WIN32
 std::filesystem::path CONFIG_DIR =
@@ -17,6 +19,18 @@ char PLATFORM[] = "unix";
 #endif
 
 std::filesystem::path SEGMENTS_DIR = DATA_PATH_DIR / "segments";
+
+struct Index {
+  uint64_t byteOffset;
+  std::string key;
+};
+
+enum Command : std::uint8_t {
+  EXIT,
+  SET,
+  GET,
+  INVALID,
+};
 
 void createDirectory(const std::filesystem::path &p) {
   std::error_code ec;
@@ -40,7 +54,30 @@ void initializeDataDir() {
   }
 }
 
-void loadSegments() {}
+Command parseCommand(std::string_view &input) {
+  const auto first = input.find_first_not_of(" \t");
+  if (first == std::string_view::npos)
+    return Command::INVALID;
+
+  input.remove_prefix(first);
+
+  const auto end = input.find_first_of(" \t");
+  std::string_view cmd = input.substr(0, end);
+
+  if (end == std::string_view::npos) {
+    input = {};
+  } else {
+    input.remove_prefix(end);
+  }
+
+  if (cmd == "exit")
+    return Command::EXIT;
+  if (cmd == "set")
+    return Command::SET;
+  if (cmd == "get")
+    return Command::GET;
+  return Command::INVALID;
+}
 
 int main(int argc, char **argv) {
   LOG_TRACE << "Detected platform: " << PLATFORM << "\n";
@@ -49,6 +86,8 @@ int main(int argc, char **argv) {
 
   initializeDataDir();
 
+  std::unordered_map<std::string, Index> segmentIndex;
+
   bool cliRunnig = true;
   std::string userInput;
 
@@ -56,10 +95,24 @@ int main(int argc, char **argv) {
     std::cout << "> ";
     std::getline(std::cin, userInput);
 
-    if (userInput == "exit") {
+    std::string_view userInputView = userInput;
+    Command cmd = parseCommand(userInputView);
+
+    switch (cmd) {
+    case EXIT:
       cliRunnig = false;
-    } else {
+      break;
+    case SET:
+      std::cout << "Set command\n";
+      break;
+    case GET:
+      std::cout << "Get command\n";
+      break;
+    case INVALID:
       std::cout << "Unknown command: " << userInput << "\n";
+      break;
     }
+
+    LOG_TRACE << "Command after parseCommand: " << userInputView << "\n";
   }
 }
