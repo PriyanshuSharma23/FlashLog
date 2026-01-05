@@ -54,21 +54,17 @@ void initializeDataDir() {
   }
 }
 
-Command parseCommand(std::string_view &input) {
-  const auto first = input.find_first_not_of(" \t");
-  if (first == std::string_view::npos)
-    return Command::INVALID;
-
-  input.remove_prefix(first);
-
+std::string_view nextToken(std::string_view &input) {
+  input.remove_prefix(std::min(input.find_first_not_of(" \t"), input.size()));
   const auto end = input.find_first_of(" \t");
-  std::string_view cmd = input.substr(0, end);
 
-  if (end == std::string_view::npos) {
-    input = {};
-  } else {
-    input.remove_prefix(end);
-  }
+  const auto tok = input.substr(0, end);
+  input.remove_prefix(std::min(end, input.size()));
+  return tok;
+}
+
+Command parseCommand(std::string_view &input) {
+  const auto cmd = nextToken(input);
 
   if (cmd == "exit")
     return Command::EXIT;
@@ -79,7 +75,32 @@ Command parseCommand(std::string_view &input) {
   return Command::INVALID;
 }
 
-void setCommand() {}
+void setCommand(const std::string &key, const std::string &value) {
+  LOG_TRACE << "Set command: " << key << " = " << value << "\n";
+}
+
+void getCommand(const std::string &key) {
+  LOG_TRACE << "Get command: " << key << "\n";
+}
+
+void handleSetCommand(std::string_view &input) {
+  const auto key = std::string(nextToken(input));
+  const auto value = std::string(nextToken(input));
+
+  if (key.empty() || value.empty())
+    throw std::runtime_error("Invalid command usage: set");
+
+  setCommand(key, value);
+}
+
+void handleGetCommand(std::string_view &input) {
+  const auto key = std::string(nextToken(input));
+
+  if (key.empty())
+    throw std::runtime_error("Invalid command usage: get");
+
+  getCommand(key);
+}
 
 auto main() -> int {
   try {
@@ -106,17 +127,15 @@ auto main() -> int {
         cliRunnig = false;
         break;
       case SET:
-        std::cout << "Set command\n";
+        handleSetCommand(userInputView);
         break;
       case GET:
-        std::cout << "Get command\n";
+        handleGetCommand(userInputView);
         break;
       case INVALID:
         std::cout << "Unknown command: " << userInput << "\n";
         break;
       }
-
-      LOG_TRACE << "Command after parseCommand: " << userInputView << "\n";
     }
   } catch (const std::filesystem::filesystem_error &err) {
     LOG_FATAL << "Error: " << err.what() << "\n";
