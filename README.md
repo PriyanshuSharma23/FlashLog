@@ -1,12 +1,3 @@
-# 🔥 GitHub Description
-
-> **FlashLog** — a lightning-fast, append-only key-value engine.
-> Memory-indexed. Crash-safe. Built for hot data and cold latency.
-
----
-
-# 💎 README.md
-
 # ⚡ FlashLog
 
 > Append boldly. Read instantly.
