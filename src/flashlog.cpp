@@ -36,7 +36,7 @@ void createDirectory(const std::filesystem::path &p) {
   std::error_code ec;
   if (std::filesystem::create_directory(p, ec)) {
     LOG_TRACE << "Directory created: " << p << "\n";
-  } else {
+  } else if (ec) {
     throw std::filesystem::filesystem_error("Failed to create directory", p,
                                             ec);
   }
@@ -79,40 +79,50 @@ Command parseCommand(std::string_view &input) {
   return Command::INVALID;
 }
 
-int main(int argc, char **argv) {
-  LOG_TRACE << "Detected platform: " << PLATFORM << "\n";
+void setCommand() {}
 
-  // TODO: Load config
+auto main() -> int {
+  try {
+    LOG_TRACE << "Detected platform: " << PLATFORM << "\n";
 
-  initializeDataDir();
+    // TODO: Load config
 
-  std::unordered_map<std::string, Index> segmentIndex;
+    initializeDataDir();
 
-  bool cliRunnig = true;
-  std::string userInput;
+    std::unordered_map<std::string, Index> segmentIndex;
 
-  while (cliRunnig) {
-    std::cout << "> ";
-    std::getline(std::cin, userInput);
+    bool cliRunnig = true;
+    std::string userInput;
 
-    std::string_view userInputView = userInput;
-    Command cmd = parseCommand(userInputView);
+    while (cliRunnig) {
+      std::cout << "> ";
+      std::getline(std::cin, userInput);
 
-    switch (cmd) {
-    case EXIT:
-      cliRunnig = false;
-      break;
-    case SET:
-      std::cout << "Set command\n";
-      break;
-    case GET:
-      std::cout << "Get command\n";
-      break;
-    case INVALID:
-      std::cout << "Unknown command: " << userInput << "\n";
-      break;
+      std::string_view userInputView = userInput;
+      Command cmd = parseCommand(userInputView);
+
+      switch (cmd) {
+      case EXIT:
+        cliRunnig = false;
+        break;
+      case SET:
+        std::cout << "Set command\n";
+        break;
+      case GET:
+        std::cout << "Get command\n";
+        break;
+      case INVALID:
+        std::cout << "Unknown command: " << userInput << "\n";
+        break;
+      }
+
+      LOG_TRACE << "Command after parseCommand: " << userInputView << "\n";
     }
-
-    LOG_TRACE << "Command after parseCommand: " << userInputView << "\n";
+  } catch (const std::filesystem::filesystem_error &err) {
+    LOG_FATAL << "Error: " << err.what() << "\n";
+    return 1;
+  } catch (const std::exception &err) {
+    LOG_FATAL << "Fatal error: " << err.what() << "\n";
+    return 1;
   }
 }
