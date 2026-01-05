@@ -18,7 +18,7 @@ files({ "src/**.h", "src/**.cpp" })
 includedirs({ "src" })
 
 filter("system:macosx")
-systemversion("latest")
+systemversion("13.0")
 buildoptions({
 	"-Wall",
 	"-Wextra",
