@@ -24,7 +24,10 @@ std::filesystem::path DATA_PATH_DIR =
 char PLATFORM[] = "unix";
 #endif
 
-const uint64_t MAX_SEGMENT_SIZE = static_cast<const uint64_t>(32 * 1024 * 1024);
+const uint64_t MAX_SEGMENT_SIZE =
+    static_cast<const uint64_t>(32 * 1024 * 1024); // 32MB
+const uint64_t INDEX_SNAPSHOT_REFRESH_THRESHOLD =
+    static_cast<const uint64_t>(256); // 1MB
 
 struct Index {
   uint64_t byteOffset;
@@ -33,7 +36,9 @@ struct Index {
 
 std::filesystem::path SEGMENTS_DIR = DATA_PATH_DIR / "segments";
 std::filesystem::path LOG_FILE = SEGMENTS_DIR / "log.txt";
+std::filesystem::path INDEX_FILE = SEGMENTS_DIR / "index.txt";
 std::unordered_map<std::string, Index> segmentIndex;
+uint64_t lastIndexSnapshotRefresh = 0;
 
 enum Command : std::uint8_t {
   EXIT,
@@ -98,6 +103,41 @@ Command parseCommand(std::string_view &input) {
   return Command::INVALID;
 }
 
+void snapshotIndex() {
+  std::error_code ec;
+  const auto currentLogFileSize = std::filesystem::file_size(LOG_FILE, ec);
+  if (ec) {
+    throw std::filesystem::filesystem_error("Failed to get log file size",
+                                            LOG_FILE, ec);
+  }
+
+  if (currentLogFileSize - lastIndexSnapshotRefresh <
+      INDEX_SNAPSHOT_REFRESH_THRESHOLD) {
+    LOG_TRACE << "Snapshotindex threshold not reached, difference: "
+              << currentLogFileSize - lastIndexSnapshotRefresh << "\n";
+    return;
+  }
+
+  auto tempIndexFilePath = INDEX_FILE;
+  tempIndexFilePath += ".tmp";
+
+  std::ofstream tempIndexFile(tempIndexFilePath,
+                              std::ios::trunc | std::ios::binary);
+
+  lastIndexSnapshotRefresh = currentLogFileSize;
+
+  for (const auto &[key, index] : segmentIndex) {
+    tempIndexFile << key << " " << index.byteOffset << "\n";
+  }
+
+  tempIndexFile.flush();
+  tempIndexFile.close();
+
+  std::filesystem::rename(tempIndexFilePath, INDEX_FILE);
+
+  LOG_TRACE << "Index snapshot created\n";
+}
+
 void setCommand(const std::string &key, const std::string &value) {
   LOG_TRACE << "Set command: " << key << " = " << value << "\n";
 
@@ -113,9 +153,11 @@ void setCommand(const std::string &key, const std::string &value) {
 
   segmentIndex.insert_or_assign(key, Index{offset, key});
   LOG_TRACE << "Offset: " << offset << "\n";
+
+  snapshotIndex();
 }
 
-void getCommand(const std::string &key) {
+std::string getCommand(const std::string &key) {
   LOG_TRACE << "Get command: " << key << "\n";
 
   std::ifstream logFile(LOG_FILE, std::ios::binary);
@@ -143,7 +185,9 @@ void getCommand(const std::string &key) {
 
   auto value = std::string(nextToken(log_view, true));
 
-  std::cout << "Value: " << value << "\n";
+  LOG_TRACE << "Value: " << value << "\n";
+
+  return value;
 }
 
 void handleSetCommand(std::string_view &input) {
