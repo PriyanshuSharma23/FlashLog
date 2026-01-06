@@ -7,11 +7,12 @@
 #include <string_view>
 #include <unordered_map>
 
+// TODO: Move initialization to a funciton
 #ifdef _WIN32
 std::filesystem::path CONFIG_DIR =
-    std::filesystem::fs::path(getenv("APPDATA")) / "FlashLog";
+    std::filesystem::path(getenv("APPDATA")) / "FlashLog";
 std::filesystem::path DATA_PATH_DIR =
-    std::filesystem::fs::path(getenv("APPDATA")) / "FlashLog";
+    std::filesystem::path(getenv("APPDATA")) / "FlashLog";
 char PLATFORM[] = "windows";
 #else
 std::filesystem::path CONFIG_DIR =
@@ -104,12 +105,12 @@ void getCommand(const std::string &key) {
   if (!logFile)
     throw std::runtime_error("open failed");
 
-  auto indexPos = segmentIndex.find(key);
-  if (indexPos == segmentIndex.end()) {
+  auto indexEntry = segmentIndex.find(key);
+  if (indexEntry == segmentIndex.end()) {
     throw std::runtime_error("Key not found");
   }
 
-  auto &index = segmentIndex[key];
+  auto &index = indexEntry->second;
   LOG_TRACE << "Offset: " << index.byteOffset << "\n";
 
   logFile.seekg((long long)index.byteOffset);
@@ -154,10 +155,10 @@ auto main() -> int {
 
     initializeDataDir();
 
-    bool cliRunnig = true;
+    bool cliRunning = true;
     std::string userInput;
 
-    while (cliRunnig) {
+    while (cliRunning) {
       std::cout << "> ";
       std::getline(std::cin, userInput);
 
@@ -166,7 +167,7 @@ auto main() -> int {
 
       switch (cmd) {
       case EXIT:
-        cliRunnig = false;
+        cliRunning = false;
         break;
       case SET:
         handleSetCommand(userInputView);
