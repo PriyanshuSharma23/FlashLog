@@ -1,6 +1,8 @@
 #include "slog.hpp"
 
 #include <cassert>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -21,6 +23,8 @@ std::filesystem::path DATA_PATH_DIR =
     std::filesystem::path(getenv("HOME")) / ".local" / "share" / "FlashLog";
 char PLATFORM[] = "unix";
 #endif
+
+const uint64_t MAX_SEGMENT_SIZE = static_cast<const uint64_t>(32 * 1024 * 1024);
 
 struct Index {
   uint64_t byteOffset;
@@ -60,12 +64,25 @@ void initializeDataDir() {
   }
 }
 
-std::string_view nextToken(std::string_view &input) {
-  input.remove_prefix(std::min(input.find_first_not_of(" \t"), input.size()));
-  const auto end = input.find_first_of(" \t");
+std::string_view nextToken(std::string_view &in, bool takeRest = false) {
+  while (!in.empty() && (in.front() == ' ' || in.front() == '\t'))
+    in.remove_prefix(1);
 
-  const auto tok = input.substr(0, end);
-  input.remove_prefix(std::min(end, input.size()));
+  if (in.empty())
+    return {};
+
+  if (takeRest) {
+    auto tok = in;
+    in = {};
+    return tok;
+  }
+
+  size_t i = 0;
+  while (i < in.size() && in[i] != ' ' && in[i] != '\t')
+    ++i;
+
+  auto tok = in.substr(0, i);
+  in.remove_prefix(i);
   return tok;
 }
 
@@ -82,8 +99,9 @@ Command parseCommand(std::string_view &input) {
 }
 
 void setCommand(const std::string &key, const std::string &value) {
-  std::ofstream logFile(LOG_FILE, std::ios::app | std::ios::binary);
   LOG_TRACE << "Set command: " << key << " = " << value << "\n";
+
+  std::ofstream logFile(LOG_FILE, std::ios::app | std::ios::binary);
   if (!logFile)
     throw std::runtime_error("open failed");
 
@@ -123,14 +141,14 @@ void getCommand(const std::string &key) {
   assert(nextToken(log_view) == "SET");
   assert(nextToken(log_view) == key);
 
-  auto value = std::string(nextToken(log_view));
+  auto value = std::string(nextToken(log_view, true));
 
   std::cout << "Value: " << value << "\n";
 }
 
 void handleSetCommand(std::string_view &input) {
   const auto key = std::string(nextToken(input));
-  const auto value = std::string(nextToken(input));
+  const auto value = std::string(nextToken(input, true));
 
   if (key.empty() || value.empty())
     throw std::runtime_error("Invalid command usage: set");
