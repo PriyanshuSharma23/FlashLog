@@ -1,5 +1,8 @@
 #include "slog.hpp"
+
+#include <cassert>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <string_view>
 #include <unordered_map>
@@ -18,12 +21,14 @@ std::filesystem::path DATA_PATH_DIR =
 char PLATFORM[] = "unix";
 #endif
 
-std::filesystem::path SEGMENTS_DIR = DATA_PATH_DIR / "segments";
-
 struct Index {
   uint64_t byteOffset;
   std::string key;
 };
+
+std::filesystem::path SEGMENTS_DIR = DATA_PATH_DIR / "segments";
+std::filesystem::path LOG_FILE = SEGMENTS_DIR / "log.txt";
+std::unordered_map<std::string, Index> segmentIndex;
 
 enum Command : std::uint8_t {
   EXIT,
@@ -76,11 +81,50 @@ Command parseCommand(std::string_view &input) {
 }
 
 void setCommand(const std::string &key, const std::string &value) {
+  std::ofstream logFile(LOG_FILE, std::ios::app | std::ios::binary);
   LOG_TRACE << "Set command: " << key << " = " << value << "\n";
+  if (!logFile)
+    throw std::runtime_error("open failed");
+
+  const auto offset = std::filesystem::file_size(LOG_FILE);
+  std::string log = "SET " + key + " " + value + "\n";
+
+  logFile.write(log.c_str(), (long long)log.size());
+  logFile.flush();
+
+  segmentIndex.insert_or_assign(key, Index{offset, key});
+  LOG_TRACE << "Offset: " << offset << "\n";
 }
 
 void getCommand(const std::string &key) {
   LOG_TRACE << "Get command: " << key << "\n";
+
+  std::ifstream logFile(LOG_FILE, std::ios::binary);
+
+  if (!logFile)
+    throw std::runtime_error("open failed");
+
+  auto indexPos = segmentIndex.find(key);
+  if (indexPos == segmentIndex.end()) {
+    throw std::runtime_error("Key not found");
+  }
+
+  auto &index = segmentIndex[key];
+  LOG_TRACE << "Offset: " << index.byteOffset << "\n";
+
+  logFile.seekg((long long)index.byteOffset);
+
+  std::string log;
+  std::getline(logFile, log);
+
+  auto log_view = std::string_view(log);
+
+  assert(nextToken(log_view) == "SET");
+  assert(nextToken(log_view) == key);
+
+  auto value = std::string(nextToken(log_view));
+
+  std::cout << "Value: " << value << "\n";
 }
 
 void handleSetCommand(std::string_view &input) {
@@ -109,8 +153,6 @@ auto main() -> int {
     // TODO: Load config
 
     initializeDataDir();
-
-    std::unordered_map<std::string, Index> segmentIndex;
 
     bool cliRunnig = true;
     std::string userInput;
