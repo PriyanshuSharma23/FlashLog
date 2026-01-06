@@ -9,7 +9,7 @@
 #include <iostream>
 #include <string_view>
 
-LogStore::LogStore() {}
+LogStore::LogStore() = default;
 
 void LogStore::snapshotIndex() {
   std::error_code ec;
@@ -60,13 +60,13 @@ void LogStore::set(const std::string &key, const std::string &value) {
   logFile.write(log.c_str(), (long long)log.size());
   logFile.flush();
 
-  segmentIndex.insert_or_assign(key, Index{offset, key});
+  segmentIndex.insert_or_assign(key, Index{.byteOffset = offset, .key = key});
   LOG_TRACE << "Offset: " << offset << "\n";
 
   snapshotIndex();
 }
 
-std::string LogStore::get(const std::string &key) {
+auto LogStore::get(const std::string &key) -> std::string {
   LOG_TRACE << "Get command: " << key << "\n";
 
   std::ifstream logFile(LOG_FILE, std::ios::binary);

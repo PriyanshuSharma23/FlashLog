@@ -3,7 +3,7 @@
 #include "cli.hpp"
 #include "slog.hpp"
 
-int main() {
+auto main() -> int {
   try {
     runCli();
   } catch (const std::filesystem::filesystem_error &err) {

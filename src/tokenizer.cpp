@@ -1,6 +1,6 @@
 #include "tokenizer.hpp"
 
-std::string_view nextToken(std::string_view &in, bool takeRest) {
+auto nextToken(std::string_view &in, bool takeRest) -> std::string_view {
   while (!in.empty() && (in.front() == ' ' || in.front() == '\t'))
     in.remove_prefix(1);
 
