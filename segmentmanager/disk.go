@@ -156,8 +156,6 @@ func (s *diskSegmentManager) idToPath(id int) string {
 }
 
 func (s *diskSegmentManager) RotateSegment() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.active != nil {
 		err := s.active.Close()
 		if err != nil {

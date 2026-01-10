@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/Priyanshu23/FlashLogGo/segmentmanager"
 )
@@ -11,81 +12,54 @@ import (
 var ErrWALClosed = os.ErrClosed
 
 type WALWriter struct {
-	mu     sync.Mutex
-	ch     chan *walRequest
-	done   chan struct{}
-	closed bool
-	sm     segmentmanager.SegmentManager
+	ch     chan *Log
 	wg     sync.WaitGroup
-}
-
-type walRequest struct {
-	log  *Log
-	done chan error
+	closed atomic.Bool
+	sm     segmentmanager.SegmentManager
 }
 
 func NewWALWriter(buffer int, sm segmentmanager.SegmentManager) *WALWriter {
 	w := &WALWriter{
-		ch:   make(chan *walRequest, buffer),
-		done: make(chan struct{}),
-		sm:   sm,
+		ch: make(chan *Log, buffer),
+		sm: sm,
 	}
-
 	go w.loop()
 	return w
 }
 
 func (w *WALWriter) Write(l *Log) error {
-	w.mu.Lock()
-	if w.closed {
-		w.mu.Unlock()
+	if w.closed.Load() {
 		return ErrWALClosed
 	}
-	w.wg.Add(1)
-	w.mu.Unlock()
 
+	w.wg.Add(1)
 	defer w.wg.Done()
 
-	req := &walRequest{log: l, done: make(chan error, 1)}
-
 	select {
-	case w.ch <- req:
-		return <-req.done
-	case <-w.done:
-		return ErrWALClosed
+	case w.ch <- l:
+		return nil
+	default:
+		w.ch <- l
+		return nil
 	}
 }
 
 func (w *WALWriter) Close() {
-	w.mu.Lock()
-	if w.closed {
-		w.mu.Unlock()
+	if w.closed.Swap(true) {
 		return
 	}
-	w.closed = true
-	w.mu.Unlock()
 
-	w.wg.Wait()
-	close(w.ch)
-	<-w.done
-	w.sm.Close()
+	go func() {
+		w.wg.Wait()
+		close(w.ch)
+		_ = w.sm.Close()
+	}()
 }
 
 func (w *WALWriter) loop() {
-	defer close(w.done)
-
-	for req := range w.ch {
-		hasErr := false
-		err := w.sm.WriteActive(req.log.Size(), func(w io.Writer) {
-			err := req.log.Encode(w)
-			if err != nil {
-				req.done <- err
-				hasErr = true
-			}
+	for l := range w.ch {
+		_ = w.sm.WriteActive(l.Size(), func(out io.Writer) {
+			_ = l.Encode(out)
 		})
-
-		if !hasErr {
-			req.done <- err
-		}
 	}
 }
