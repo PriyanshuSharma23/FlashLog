@@ -32,9 +32,8 @@ func NewWALWriter(buffer int, dir string) (*WALWriter, error) {
 		return nil, fmt.Errorf("failed to open WAL file: %w", err)
 	}
 
-	// Seek to end to append new entries (can't use O_APPEND as it breaks seek-back-and-update CRC logic)
 	if _, err := f.Seek(0, io.SeekEnd); err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("failed to seek to end of WAL file: %w", err)
 	}
 

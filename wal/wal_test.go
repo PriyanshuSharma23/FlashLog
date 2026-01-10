@@ -13,8 +13,12 @@ func withTempWAL(t *testing.T, fn func(f *os.File)) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(f.Name())
-	defer f.Close()
+	defer func() {
+		_ = os.Remove(f.Name())
+	}()
+	defer func() {
+		_ = f.Close()
+	}()
 	fn(f)
 }
 
@@ -35,7 +39,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 				if err := tt.log.Encode(f); err != nil {
 					t.Fatal(err)
 				}
-				f.Seek(0, io.SeekStart)
+				_, _ = f.Seek(0, io.SeekStart)
 
 				got, err := Decode(f)
 				if err != nil {
@@ -60,14 +64,14 @@ func TestDecodeDetectsCorruption(t *testing.T) {
 		}
 
 		// Flip one bit
-		f.Seek(-1, io.SeekEnd)
+		_, _ = f.Seek(-1, io.SeekEnd)
 		b := []byte{0}
-		f.Read(b)
+		_, _ = f.Read(b)
 		b[0] ^= 0xFF
-		f.Seek(-1, io.SeekEnd)
-		f.Write(b)
+		_, _ = f.Seek(-1, io.SeekEnd)
+		_, _ = f.Write(b)
 
-		f.Seek(0, io.SeekStart)
+		_, _ = f.Seek(0, io.SeekStart)
 		if _, err := Decode(f); err != ErrCorruptWAL {
 			t.Fatalf("expected ErrCorruptWAL, got %v", err)
 		}
@@ -85,8 +89,8 @@ func TestDecodeDetectsTruncation(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			f.Truncate(int64(i))
-			f.Seek(0, io.SeekStart)
+			_ = f.Truncate(int64(i))
+			_, _ = f.Seek(0, io.SeekStart)
 
 			if _, err := Decode(f); err != io.EOF {
 				t.Fatalf("expected EOF at %d, got %v", i, err)
@@ -109,7 +113,7 @@ func TestDecodeMultipleRecords(t *testing.T) {
 			}
 		}
 
-		f.Seek(0, io.SeekStart)
+		_, _ = f.Seek(0, io.SeekStart)
 		for i, want := range records {
 			got, err := Decode(f)
 			if err != nil {
@@ -130,9 +134,9 @@ func TestDecodeMultipleRecords(t *testing.T) {
 
 func TestRejectsInsaneLength(t *testing.T) {
 	withTempWAL(t, func(f *os.File) {
-		binary.Write(f, binary.LittleEndian, uint32(0x11111111))
-		binary.Write(f, binary.LittleEndian, uint32(0xFFFFFFFF))
-		f.Seek(0, io.SeekStart)
+		_ = binary.Write(f, binary.LittleEndian, uint32(0x11111111))
+		_ = binary.Write(f, binary.LittleEndian, uint32(0xFFFFFFFF))
+		_, _ = f.Seek(0, io.SeekStart)
 
 		if _, err := Decode(f); err != ErrCorruptWAL {
 			t.Fatalf("expected ErrCorruptWAL, got %v", err)

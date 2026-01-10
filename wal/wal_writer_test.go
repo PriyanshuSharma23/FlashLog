@@ -50,8 +50,8 @@ func TestWALConcurrentWrites(t *testing.T) {
 			defer wg.Done()
 			l := &Log{
 				op:    OperationPut,
-				key:   []byte(fmt.Sprintf("k-%d", i)),
-				value: []byte(fmt.Sprintf("v-%d", i)),
+				key:   fmt.Appendf(nil, "k-%d", i),
+				value: fmt.Appendf(nil, "v-%d", i),
 			}
 			err := wal.Write(l)
 			if err != nil {
@@ -64,8 +64,6 @@ func TestWALConcurrentWrites(t *testing.T) {
 	wal.Close() // Ensure all writes are flushed before reading
 
 	reader, err := NewWALReader(dir)
-	defer reader.Close()
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,6 +83,11 @@ func TestWALConcurrentWrites(t *testing.T) {
 
 	if len(seen) != N {
 		t.Fatalf("expected %d records, got %d", N, len(seen))
+	}
+
+	err = reader.Close()
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 

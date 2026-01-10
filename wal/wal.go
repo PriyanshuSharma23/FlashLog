@@ -32,13 +32,16 @@ func (l *Log) String() string {
 	return fmt.Sprintf("[crc: ] [operation: %d] [key: %s] [value: %s]", l.op, l.key, l.value)
 }
 
-// Encode Binary format:
+// Size Binary format:
 // | CRC (4) | TOTAL_LEN (4) | TYPE (1) | KEY_LEN (4) | KEY | VAL_LEN (4) | VALUE |
 // CRC = checksum(TOTAL_LEN | PAYLOAD)
 func (l *Log) Size() int {
 	return 4 + 4 + 1 + 4 + len(l.key) + 4 + len(l.value)
 }
 
+// Encode Binary format:
+// | CRC (4) | TOTAL_LEN (4) | TYPE (1) | KEY_LEN (4) | KEY | VAL_LEN (4) | VALUE |
+// CRC = checksum(TOTAL_LEN | PAYLOAD)
 func (l *Log) Encode(w io.Writer) error {
 	seeker, ok := w.(io.Seeker)
 	if !ok {
