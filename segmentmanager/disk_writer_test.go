@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
-	"time"
 )
 
 const dirName = "./segments"
@@ -148,19 +148,21 @@ func TestConcurrentDiskSegmentWrites(t *testing.T) {
 
 	content := "whats up"
 
-	go func() {
+	var wg sync.WaitGroup
+
+	wg.Go(func() {
 		_ = sm.WriteActive(len(content), func(w io.Writer) {
 			_, _ = fmt.Fprint(w, content)
 		})
-	}()
+	})
 
-	go func() {
+	wg.Go(func() {
 		_ = sm.WriteActive(len(content), func(w io.Writer) {
 			_, _ = fmt.Fprint(w, content)
 		})
-	}()
+	})
 
-	time.Sleep(time.Second)
+	wg.Wait()
 
 	fileName := filepath.Join("segments", "segment-0001.log")
 	file, err := os.Open(fileName)
@@ -168,7 +170,9 @@ func TestConcurrentDiskSegmentWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	defer file.Close()
+	defer func() {
+		_ = file.Close()
+	}()
 
 	fileContent, err := io.ReadAll(file)
 	if err != nil {
