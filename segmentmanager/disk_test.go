@@ -2,10 +2,12 @@ package segmentmanager
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 const dirName = "./segments"
@@ -28,12 +30,8 @@ func setupDiskTests(t *testing.T, options ...DiskSegmentManagerOption) (sm *disk
 }
 
 func TestWithOptionInitializers(t *testing.T) {
-	sm, cleanup := setupDiskTests(t, WithLogFileExt(".dog"), WithMaxSegmentSize(10))
+	sm, cleanup := setupDiskTests(t, WithMaxSegmentSize(10))
 	defer cleanup()
-
-	if sm.logFileExt != ".dog" {
-		t.Fatal("expected .dog", "got", sm.logFileExt)
-	}
 
 	if sm.maxSegmentSize != 10 {
 		t.Fatal("expected 10", "got", sm.maxSegmentSize)
@@ -67,19 +65,6 @@ func TestExistingDirDiskStateManager(t *testing.T) {
 	sm, cleanup := setupDiskTests(t)
 	defer cleanup()
 
-	initializeDir := func() {
-		file, err := os.Create(dirName + "/segment-0001.log")
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		if err := file.Close(); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	initializeDir()
-
 	if sm.activeID != 1 {
 		t.Fatal("active id not set")
 	}
@@ -93,12 +78,12 @@ func TestDiskGetActiveFileWithoutRotation(t *testing.T) {
 	sm, cleanup := setupDiskTests(t, WithMaxSegmentSize(100))
 	defer cleanup()
 
-	file, err := sm.Active(50)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = fmt.Fprintf(file, "whats up")
+	err := sm.WriteActive(50, func(w io.Writer) {
+		_, err := fmt.Fprintf(w, "whats up")
+		if err != nil {
+			t.Fatal(err)
+		}
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +100,7 @@ func TestDiskGetActiveFileWithoutRotation(t *testing.T) {
 	}
 }
 
-func TestDisGetActiveFileWithRotation(t *testing.T) {
+func TestDiskGetActiveFileWithRotation(t *testing.T) {
 	tests := []struct {
 		name           string
 		content        string
@@ -134,17 +119,12 @@ func TestDisGetActiveFileWithRotation(t *testing.T) {
 			defer cleanup()
 
 			for i := 0; i < test.iterations; i++ {
-				out, err := sm.Active(len(test.content))
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				_, err = fmt.Fprint(out, test.content)
-				if err != nil {
-					t.Fatal(err)
-				}
-
-				err = sm.Sync()
+				err := sm.WriteActive(len(test.content), func(w io.Writer) {
+					_, err := fmt.Fprint(w, test.content)
+					if err != nil {
+						t.Fatal(err)
+					}
+				})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -159,5 +139,43 @@ func TestDisGetActiveFileWithRotation(t *testing.T) {
 				t.Fatal("expected", test.expectedFiles, "got", len(entries))
 			}
 		})
+	}
+}
+
+func TestConcurrentDiskSegmentWrites(t *testing.T) {
+	sm, cleanup := setupDiskTests(t, WithMaxSegmentSize(100))
+	defer cleanup()
+
+	content := "whats up"
+
+	go func() {
+		_ = sm.WriteActive(len(content), func(w io.Writer) {
+			_, _ = fmt.Fprint(w, content)
+		})
+	}()
+
+	go func() {
+		_ = sm.WriteActive(len(content), func(w io.Writer) {
+			_, _ = fmt.Fprint(w, content)
+		})
+	}()
+
+	time.Sleep(time.Second)
+
+	fileName := filepath.Join("segments", "segment-0001.log")
+	file, err := os.Open(fileName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer file.Close()
+
+	fileContent, err := io.ReadAll(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(fileContent) != "whats upwhats up" {
+		t.Fatal("expected whats upwhats up", "got", string(content))
 	}
 }

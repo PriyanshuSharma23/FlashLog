@@ -8,7 +8,7 @@ import (
 )
 
 type SegmentManager interface {
-	Active(n int) (io.Writer, error)
+	WriteActive(n int, fn func(w io.Writer)) error
 	Sync() error
 	RotateSegment() error
 	Close() error

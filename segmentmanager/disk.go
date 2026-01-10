@@ -9,16 +9,18 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"sync"
 )
 
 const (
 	defaultMaxDiskSegmentSize = 16 * 1024 * 1024
-	defaultDiskLogFileExt     = ".log"
+	diskLogFileExt            = ".log"
 )
 
 var segmentFileNamePattern = regexp.MustCompile(`^segment-(\d+)\.log$`)
 
 type diskSegmentManager struct {
+	mu             sync.Mutex
 	active         *os.File
 	activeID       int
 	dir            string
@@ -55,17 +57,11 @@ func WithMaxSegmentSize(maxSegmentSize int64) DiskSegmentManagerOption {
 	}
 }
 
-func WithLogFileExt(logFileExt string) DiskSegmentManagerOption {
-	return func(sm *diskSegmentManager) {
-		sm.logFileExt = logFileExt
-	}
-}
-
 func NewDiskSegmentManager(dir string, options ...DiskSegmentManagerOption) (*diskSegmentManager, error) {
 	sm := &diskSegmentManager{
 		activeID:       0,
 		dir:            dir,
-		logFileExt:     defaultDiskLogFileExt,
+		logFileExt:     diskLogFileExt,
 		active:         nil,
 		maxSegmentSize: defaultMaxDiskSegmentSize,
 	}
@@ -76,7 +72,7 @@ func NewDiskSegmentManager(dir string, options ...DiskSegmentManagerOption) (*di
 
 	if err := isDirectoryValid(dir); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			if err := os.Mkdir(dir, 0o755); err != nil {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
 				return nil, err
 			}
 
@@ -145,11 +141,13 @@ func validateSegmentEntries(entries SegmentEntries) bool {
 		return true
 	}
 
-	if len(entries) == entries[len(entries)-1].id {
-		return true
+	for i, e := range entries {
+		if e.id != i+1 {
+			return false
+		}
 	}
 
-	return false
+	return true
 }
 
 func (s *diskSegmentManager) idToPath(id int) string {
@@ -158,6 +156,13 @@ func (s *diskSegmentManager) idToPath(id int) string {
 }
 
 func (s *diskSegmentManager) RotateSegment() error {
+	if s.active != nil {
+		err := s.active.Close()
+		if err != nil {
+			return fmt.Errorf("failed to close previous segment: %w", err)
+		}
+	}
+
 	s.activeID++
 	newSegmentFilePath := s.idToPath(s.activeID)
 
@@ -171,27 +176,37 @@ func (s *diskSegmentManager) RotateSegment() error {
 	return nil
 }
 
-func (s *diskSegmentManager) Active(n int) (io.Writer, error) {
+func (s *diskSegmentManager) WriteActive(n int, fn func(w io.Writer)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	if int64(n) > s.maxSegmentSize {
-		return nil, fmt.Errorf("n too large: %d", n)
+		return fmt.Errorf("n too large: %d", n)
 	}
 
 	if s.active == nil {
-		panic("active file not initialized")
+		return fmt.Errorf("active file not initialized")
 	}
 
 	stat, err := s.active.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("failed to stat active file: %w", err)
+		return fmt.Errorf("failed to stat active file: %w", err)
 	}
 
 	if stat.Size()+int64(n) > s.maxSegmentSize {
 		if err := s.RotateSegment(); err != nil {
-			return nil, fmt.Errorf("failed to rotate segment: %w", err)
+			return fmt.Errorf("failed to rotate segment: %w", err)
 		}
 	}
 
-	return s.active, nil
+	fn(s.active)
+
+	err = s.active.Sync()
+	if err != nil {
+		return fmt.Errorf("failed to sync active file: %w", err)
+	}
+
+	return nil
 }
 
 func (s *diskSegmentManager) Sync() error {
