@@ -6,6 +6,30 @@ import (
 	"testing"
 )
 
+func TestWithOptionInitializers(t *testing.T) {
+	dirName := "./segments"
+
+	defer func() {
+		err := os.RemoveAll(dirName)
+		if err != nil {
+			t.Log("Failed to clean up segments dir")
+		}
+	}()
+
+	sm, err := NewDiskSegmentManager(dirName, WithLogFileExt(".dog"), WithMaxSegmentSize(10))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if sm.logFileExt != ".dog" {
+		t.Fatal("expected .dog", "got", sm.logFileExt)
+	}
+
+	if sm.maxSegmentSize != 10 {
+		t.Fatal("expected 10", "got", sm.maxSegmentSize)
+	}
+}
+
 func TestInitializeEmptyDirDiskSegmentManager(t *testing.T) {
 	dirName := "./segments"
 
@@ -16,7 +40,7 @@ func TestInitializeEmptyDirDiskSegmentManager(t *testing.T) {
 		}
 	}()
 
-	sm, err := NewDiskSegmentManager(dirName, "")
+	sm, err := NewDiskSegmentManager(dirName)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,7 +91,7 @@ func TestExistingDirDiskStateManager(t *testing.T) {
 
 	initializeDir()
 
-	sm, err := NewDiskSegmentManager(dirName, "")
+	sm, err := NewDiskSegmentManager(dirName)
 	if err != nil {
 		t.Fatal(err)
 	}

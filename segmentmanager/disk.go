@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	DefaultMaxDiskSegmentSize = 16 * 1024 * 1024 // 16MB
-	DefaultDiskLogFileExt     = ".log"
+	defaultMaxDiskSegmentSize = 16 * 1024 * 1024 // 16MB
+	defaultDiskLogFileExt     = ".log"
 )
 
 type diskSegmentManager struct {
@@ -36,24 +36,39 @@ func isDirectoryValid(path string) error {
 	return err
 }
 
-func initializeEmptySegmentDir(dir, logFileExt string) (*diskSegmentManager, error) {
-	sm := &diskSegmentManager{
-		activeID:   0,
-		dir:        dir,
-		logFileExt: logFileExt,
-		active:     nil,
-	}
-
-	if err := sm.RotateSegment(); err != nil {
+func initializeEmptySegmentDir(baseSM *diskSegmentManager) (*diskSegmentManager, error) {
+	if err := baseSM.RotateSegment(); err != nil {
 		return nil, fmt.Errorf("failed to craete first segment: %w", err)
 	}
 
-	return sm, nil
+	return baseSM, nil
 }
 
-func NewDiskSegmentManager(dir string, logFileExt string) (*diskSegmentManager, error) {
-	if logFileExt == "" {
-		logFileExt = DefaultDiskLogFileExt
+type DiskSegmentManagerOption func(sm *diskSegmentManager)
+
+func WithMaxSegmentSize(maxSegmentSize int) DiskSegmentManagerOption {
+	return func(sm *diskSegmentManager) {
+		sm.maxSegmentSize = maxSegmentSize
+	}
+}
+
+func WithLogFileExt(logFileExt string) DiskSegmentManagerOption {
+	return func(sm *diskSegmentManager) {
+		sm.logFileExt = logFileExt
+	}
+}
+
+func NewDiskSegmentManager(dir string, options ...DiskSegmentManagerOption) (*diskSegmentManager, error) {
+	sm := &diskSegmentManager{
+		activeID:       0,
+		dir:            dir,
+		logFileExt:     defaultDiskLogFileExt,
+		active:         nil,
+		maxSegmentSize: defaultMaxDiskSegmentSize,
+	}
+
+	for _, option := range options {
+		option(sm)
 	}
 
 	if err := isDirectoryValid(dir); err != nil {
@@ -62,7 +77,7 @@ func NewDiskSegmentManager(dir string, logFileExt string) (*diskSegmentManager, 
 				return nil, err
 			}
 
-			return initializeEmptySegmentDir(dir, logFileExt)
+			return initializeEmptySegmentDir(sm)
 		}
 
 		return nil, err
@@ -81,7 +96,7 @@ func NewDiskSegmentManager(dir string, logFileExt string) (*diskSegmentManager, 
 
 		ext := filepath.Ext(entry.Name())
 
-		if ext != logFileExt {
+		if ext != sm.logFileExt {
 			continue
 		}
 
@@ -102,7 +117,7 @@ func NewDiskSegmentManager(dir string, logFileExt string) (*diskSegmentManager, 
 	}
 
 	if len(segmentEntries) == 0 {
-		return initializeEmptySegmentDir(dir, logFileExt)
+		return initializeEmptySegmentDir(sm)
 	}
 
 	sort.Sort(segmentEntries)
@@ -111,20 +126,12 @@ func NewDiskSegmentManager(dir string, logFileExt string) (*diskSegmentManager, 
 		return nil, errors.New("invalid segment entries")
 	}
 
-	latestID := segmentEntries[len(segmentEntries)-1].id
+	sm.activeID = segmentEntries[len(segmentEntries)-1].id
 
-	sm := &diskSegmentManager{
-		logFileExt: logFileExt,
-		dir:        dir,
-		activeID:   latestID,
-		active:     nil,
-	}
-
-	activeFile, err := os.OpenFile(sm.idToPath(latestID), os.O_APPEND|os.O_RDWR, 0o644)
+	activeFile, err := os.OpenFile(sm.idToPath(sm.activeID), os.O_APPEND|os.O_RDWR, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open active file: %w", err)
 	}
-
 	sm.active = activeFile
 
 	return sm, nil
