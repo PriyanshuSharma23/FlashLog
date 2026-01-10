@@ -1,25 +1,35 @@
 package segmentmanager
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestWithOptionInitializers(t *testing.T) {
-	dirName := "./segments"
+const dirName = "./segments"
 
-	defer func() {
+func setupDiskTests(t *testing.T, options ...DiskSegmentManagerOption) (sm *diskSegmentManager, cleanup func(...bool)) {
+	sm, err := NewDiskSegmentManager(dirName, options...)
+	if err != nil {
+		t.Fatal("failed to create disk segment manager", err)
+	}
+
+	return sm, func(skip ...bool) {
+		if len(skip) > 0 && skip[0] {
+			return
+		}
 		err := os.RemoveAll(dirName)
 		if err != nil {
 			t.Log("Failed to clean up segments dir")
 		}
-	}()
-
-	sm, err := NewDiskSegmentManager(dirName, WithLogFileExt(".dog"), WithMaxSegmentSize(10))
-	if err != nil {
-		t.Fatal(err)
 	}
+}
+
+func TestWithOptionInitializers(t *testing.T) {
+	sm, cleanup := setupDiskTests(t, WithLogFileExt(".dog"), WithMaxSegmentSize(10))
+	defer cleanup()
 
 	if sm.logFileExt != ".dog" {
 		t.Fatal("expected .dog", "got", sm.logFileExt)
@@ -31,19 +41,8 @@ func TestWithOptionInitializers(t *testing.T) {
 }
 
 func TestInitializeEmptyDirDiskSegmentManager(t *testing.T) {
-	dirName := "./segments"
-
-	defer func() {
-		err := os.RemoveAll(dirName)
-		if err != nil {
-			t.Log("Failed to clean up segments dir")
-		}
-	}()
-
-	sm, err := NewDiskSegmentManager(dirName)
-	if err != nil {
-		t.Fatal(err)
-	}
+	sm, cleanup := setupDiskTests(t)
+	defer cleanup()
 
 	if sm.activeID != 1 {
 		t.Fatal("active id not set")
@@ -65,20 +64,10 @@ func TestInitializeEmptyDirDiskSegmentManager(t *testing.T) {
 }
 
 func TestExistingDirDiskStateManager(t *testing.T) {
-	dirName := "./segments"
-
-	defer func() {
-		err := os.RemoveAll(dirName)
-		if err != nil {
-			t.Log("Failed to clean up segments dir")
-		}
-	}()
+	sm, cleanup := setupDiskTests(t)
+	defer cleanup()
 
 	initializeDir := func() {
-		if err := os.Mkdir(dirName, 0o755); err != nil {
-			t.Fatal(err)
-		}
-
 		file, err := os.Create(dirName + "/segment-0001.log")
 		if err != nil {
 			t.Fatal(err)
@@ -91,16 +80,84 @@ func TestExistingDirDiskStateManager(t *testing.T) {
 
 	initializeDir()
 
-	sm, err := NewDiskSegmentManager(dirName)
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	if sm.activeID != 1 {
 		t.Fatal("active id not set")
 	}
 
 	if !strings.Contains(sm.active.Name(), "segment-0001.log") {
 		t.Fatal("expected segment-0001.log", "got", sm.active.Name())
+	}
+}
+
+func TestDiskGetActiveFileWithoutRotation(t *testing.T) {
+	sm, cleanup := setupDiskTests(t, WithMaxSegmentSize(100))
+	defer cleanup()
+
+	file, err := sm.Active(50)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = fmt.Fprintf(file, "whats up")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	filename := filepath.Join(dirName, "segment-0001.log")
+
+	segementFileContent, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if string(segementFileContent) != "whats up" {
+		t.Fatal("expected whats up", "got", string(segementFileContent))
+	}
+}
+
+func TestDisGetActiveFileWithRotation(t *testing.T) {
+	tests := []struct {
+		name           string
+		content        string
+		iterations     int
+		maxSegmentSize int
+		expectedFiles  int
+	}{
+		{"2 writes per file", "hello", 50, 10, 25},
+		{"Content size greater than half", "hello", 50, 8, 50},
+		{"content size exual to max segment size", "hello", 50, 5, 50},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			sm, cleanup := setupDiskTests(t, WithMaxSegmentSize(int64(test.maxSegmentSize)))
+			defer cleanup()
+
+			for i := 0; i < test.iterations; i++ {
+				out, err := sm.Active(len(test.content))
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				_, err = fmt.Fprint(out, test.content)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				err = sm.Sync()
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			entries, err := os.ReadDir(dirName)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if len(entries) != test.expectedFiles {
+				t.Fatal("expected", test.expectedFiles, "got", len(entries))
+			}
+		})
 	}
 }

@@ -5,14 +5,11 @@ package segmentmanager
 
 import (
 	"io"
-	"regexp"
 )
-
-var segmentFileNamePattern = regexp.MustCompile(`^segment-(\d+)\.log$`)
 
 type SegmentManager interface {
 	Active(n int) (io.Writer, error)
-	Sync()
+	Sync() error
 	RotateSegment() error
 	Close() error
 }

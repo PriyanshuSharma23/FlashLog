@@ -6,21 +6,24 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 )
 
 const (
-	defaultMaxDiskSegmentSize = 16 * 1024 * 1024 // 16MB
+	defaultMaxDiskSegmentSize = 16 * 1024 * 1024
 	defaultDiskLogFileExt     = ".log"
 )
+
+var segmentFileNamePattern = regexp.MustCompile(`^segment-(\d+)\.log$`)
 
 type diskSegmentManager struct {
 	active         *os.File
 	activeID       int
 	dir            string
 	logFileExt     string
-	maxSegmentSize int
+	maxSegmentSize int64
 }
 
 func isDirectoryValid(path string) error {
@@ -46,7 +49,7 @@ func initializeEmptySegmentDir(baseSM *diskSegmentManager) (*diskSegmentManager,
 
 type DiskSegmentManagerOption func(sm *diskSegmentManager)
 
-func WithMaxSegmentSize(maxSegmentSize int) DiskSegmentManagerOption {
+func WithMaxSegmentSize(maxSegmentSize int64) DiskSegmentManagerOption {
 	return func(sm *diskSegmentManager) {
 		sm.maxSegmentSize = maxSegmentSize
 	}
@@ -169,11 +172,45 @@ func (s *diskSegmentManager) RotateSegment() error {
 }
 
 func (s *diskSegmentManager) Active(n int) (io.Writer, error) {
-	return nil, nil
+	if int64(n) > s.maxSegmentSize {
+		return nil, fmt.Errorf("n too large: %d", n)
+	}
+
+	if s.active == nil {
+		panic("active file not initialized")
+	}
+
+	stat, err := s.active.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("failed to stat active file: %w", err)
+	}
+
+	if stat.Size()+int64(n) > s.maxSegmentSize {
+		if err := s.RotateSegment(); err != nil {
+			return nil, fmt.Errorf("failed to rotate segment: %w", err)
+		}
+	}
+
+	return s.active, nil
 }
 
-func (s *diskSegmentManager) Sync() {}
+func (s *diskSegmentManager) Sync() error {
+	if s.active == nil {
+		panic("active file not initialized")
+	}
+
+	err := s.active.Sync()
+	if err != nil {
+		return fmt.Errorf("failed to sync active file: %w", err)
+	}
+
+	return nil
+}
 
 func (s *diskSegmentManager) Close() error {
+	err := s.active.Close()
+	if err != nil {
+		return fmt.Errorf("failed to close active file: %w", err)
+	}
 	return nil
 }
