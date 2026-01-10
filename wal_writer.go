@@ -3,6 +3,8 @@ package main
 import (
 	"os"
 	"sync"
+
+	"github.com/Priyanshu23/FlashLogGo/segmentmanager"
 )
 
 var ErrWALClosed = os.ErrClosed
@@ -12,7 +14,7 @@ type WALWriter struct {
 	ch     chan *walRequest
 	done   chan struct{}
 	closed bool
-	f      *os.File
+	sm     segmentmanager.SegmentManager
 	wg     sync.WaitGroup
 }
 
@@ -21,13 +23,11 @@ type walRequest struct {
 	done chan error
 }
 
-func NewWALWriter(buffer int) *WALWriter {
-	f, _ := os.Create("wal.log")
-
+func NewWALWriter(sm segmentmanager.SegmentManager, chanBuffer int) *WALWriter {
 	w := &WALWriter{
-		ch:   make(chan *walRequest, buffer),
+		ch:   make(chan *walRequest, chanBuffer),
 		done: make(chan struct{}),
-		f:    f,
+		sm:   sm,
 	}
 
 	go w.loop()
@@ -67,16 +67,22 @@ func (w *WALWriter) Close() {
 	w.wg.Wait()
 	close(w.ch)
 	<-w.done
-	w.f.Close()
+	w.sm.Close() // TODO: handle error
 }
 
 func (w *WALWriter) loop() {
 	defer close(w.done)
 
 	for req := range w.ch {
-		err := req.log.Encode(w.f)
+		out, err := w.sm.Active(req.log.Size())
+		if err != nil {
+			req.done <- err
+			continue
+		}
+
+		err = req.log.Encode(out)
 		if err == nil {
-			w.f.Sync()
+			w.sm.Sync()
 		}
 		req.done <- err
 	}

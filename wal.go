@@ -26,8 +26,6 @@ type Log struct {
 	key   []byte
 	value []byte
 	crc   uint32
-
-	done chan error
 }
 
 func (l *Log) String() string {
@@ -37,6 +35,10 @@ func (l *Log) String() string {
 // Encode Binary format:
 // | CRC (4) | TOTAL_LEN (4) | TYPE (1) | KEY_LEN (4) | KEY | VAL_LEN (4) | VALUE |
 // CRC = checksum(TOTAL_LEN | PAYLOAD)
+func (l *Log) Size() int {
+	return 4 + 4 + 1 + 4 + len(l.key) + 4 + len(l.value)
+}
+
 func (l *Log) Encode(w io.Writer) error {
 	seeker, ok := w.(io.Seeker)
 	if !ok {
