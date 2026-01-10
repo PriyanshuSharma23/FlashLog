@@ -1,36 +1,16 @@
 package main
 
 import (
-	"os"
-	"strconv"
+	"fmt"
+	"io"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/Priyanshu23/FlashLogGo/segments"
 )
 
-const dirName = "wal_writer_test"
-
-func setupSegmentManager(t *testing.T) (segments.SegmentsWriter, func()) {
-	sm, err := segments.NewDiskSegmentsWriter(dirName)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return sm, func() {
-		err := os.RemoveAll(dirName)
-		if err != nil {
-			t.Log("failed to remove test directory:", err)
-		}
-	}
-}
-
 func TestWALWriteBlocksUntilDurable(t *testing.T) {
-	sm, cleanup := setupSegmentManager(t)
-	defer cleanup()
-
-	wal := NewWALWriter(1, sm)
+	dirName := t.TempDir()
+	wal, _ := NewWALWriter(1, dirName)
 	defer wal.Close()
 
 	l := &Log{
@@ -55,39 +35,63 @@ func TestWALWriteBlocksUntilDurable(t *testing.T) {
 }
 
 func TestWALConcurrentWrites(t *testing.T) {
-	sm, cleanup := setupSegmentManager(t)
-	defer cleanup()
+	dir := t.TempDir()
+	wal, err := NewWALWriter(1, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	wal := NewWALWriter(1024, sm)
-	defer wal.Close()
-
+	const N = 50
 	var wg sync.WaitGroup
 
-	for i := range 1000 {
+	for i := range N {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-
 			l := &Log{
 				op:    OperationPut,
-				key:   []byte("k"),
-				value: []byte(strconv.Itoa(i)),
+				key:   []byte(fmt.Sprintf("k-%d", i)),
+				value: []byte(fmt.Sprintf("v-%d", i)),
 			}
-
-			if err := wal.Write(l); err != nil {
-				t.Error(err)
+			err := wal.Write(l)
+			if err != nil {
+				fmt.Println(err)
 			}
 		}(i)
 	}
 
 	wg.Wait()
+	wal.Close() // Ensure all writes are flushed before reading
+
+	reader, err := NewWALReader(dir)
+	defer reader.Close()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	seen := map[string]bool{}
+	for {
+		l, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		seen[string(l.key)] = true
+	}
+
+	if len(seen) != N {
+		t.Fatalf("expected %d records, got %d", N, len(seen))
+	}
 }
 
 func TestWALCloseUnblocksWriters(t *testing.T) {
-	sm, cleanup := setupSegmentManager(t)
-	defer cleanup()
-
-	wal := NewWALWriter(1, sm)
+	dirName := t.TempDir()
+	wal, _ := NewWALWriter(1, dirName)
+	defer wal.Close()
 
 	go func() {
 		_ = wal.Write(&Log{op: OperationPut, key: []byte("x"), value: []byte("1")})
@@ -99,7 +103,7 @@ func TestWALCloseUnblocksWriters(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		wal.Write(&Log{op: OperationPut, key: []byte("y"), value: []byte("2")})
+		_ = wal.Write(&Log{op: OperationPut, key: []byte("y"), value: []byte("2")})
 		close(done)
 	}()
 

@@ -1,46 +1,61 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
-
-	"github.com/Priyanshu23/FlashLogGo/segments"
 )
 
 var ErrWALClosed = os.ErrClosed
 
+const WalFilePath = "WAL.log"
+
 type WALWriter struct {
 	ch     chan *Log
+	done   chan struct{}
 	wg     sync.WaitGroup
 	closed atomic.Bool
-	sm     segments.SegmentsWriter
+	f      *os.File
 }
 
-func NewWALWriter(buffer int, sm segments.SegmentsWriter) *WALWriter {
-	w := &WALWriter{
-		ch: make(chan *Log, buffer),
-		sm: sm,
+func NewWALWriter(buffer int, dir string) (*WALWriter, error) {
+	err := os.MkdirAll(dir, 0o755)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create directory: %w", err)
 	}
-	go w.loop()
-	return w
-}
 
-func (w *WALWriter) Write(l *Log) error {
-	if w.closed.Load() {
-		return ErrWALClosed
+	f, err := os.OpenFile(filepath.Join(dir, WalFilePath), os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open WAL file: %w", err)
+	}
+
+	// Seek to end to append new entries (can't use O_APPEND as it breaks seek-back-and-update CRC logic)
+	if _, err := f.Seek(0, io.SeekEnd); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("failed to seek to end of WAL file: %w", err)
+	}
+
+	w := &WALWriter{
+		ch:   make(chan *Log, buffer),
+		done: make(chan struct{}),
+		f:    f,
 	}
 
 	w.wg.Add(1)
-	defer w.wg.Done()
+	go w.loop()
 
+	return w, nil
+}
+
+func (w *WALWriter) Write(l *Log) error {
 	select {
 	case w.ch <- l:
 		return nil
-	default:
-		w.ch <- l
-		return nil
+	case <-w.done:
+		return ErrWALClosed
 	}
 }
 
@@ -49,17 +64,36 @@ func (w *WALWriter) Close() {
 		return
 	}
 
-	go func() {
-		w.wg.Wait()
-		close(w.ch)
-		_ = w.sm.Close()
-	}()
+	close(w.done)
+	w.wg.Wait()
+	_ = w.f.Close()
 }
 
 func (w *WALWriter) loop() {
-	for l := range w.ch {
-		_ = w.sm.Write(l.Size(), func(out io.Writer) {
-			_ = l.Encode(out)
-		})
+	defer w.wg.Done()
+
+	for {
+		select {
+		case l := <-w.ch:
+			err := l.Encode(w.f)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "failed to write WAL: %v\n", err)
+			}
+			_ = w.f.Sync()
+		case <-w.done:
+			// Drain remaining items in channel before exiting
+			for {
+				select {
+				case l := <-w.ch:
+					err := l.Encode(w.f)
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "failed to write WAL: %v\n", err)
+					}
+					_ = w.f.Sync()
+				default:
+					return
+				}
+			}
+		}
 	}
 }

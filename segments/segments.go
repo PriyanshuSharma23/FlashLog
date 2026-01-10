@@ -1,5 +1,5 @@
 // Package segments provides an interface for writing logs into rotating segments.
-// The user of this module only sees an Active() method to write into; all segment
+// The user of this module only sees an Write() method to write into; all segment
 // rotation functionality is handled internally by this package.
 package segments
 
