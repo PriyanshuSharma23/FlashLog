@@ -1,14 +1,36 @@
 package main
 
 import (
+	"os"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Priyanshu23/FlashLogGo/segmentmanager"
 )
 
+const dirName = "wal_writer_test"
+
+func setupSegmentManager(t *testing.T) (segmentmanager.SegmentManager, func()) {
+	sm, err := segmentmanager.NewDiskSegmentManager(dirName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return sm, func() {
+		err := os.RemoveAll(dirName)
+		if err != nil {
+			t.Log("failed to remove test directory:", err)
+		}
+	}
+}
+
 func TestWALWriteBlocksUntilDurable(t *testing.T) {
-	wal := NewWALWriter(1)
+	sm, cleanup := setupSegmentManager(t)
+	defer cleanup()
+
+	wal := NewWALWriter(1, sm)
 	defer wal.Close()
 
 	l := &Log{
@@ -33,7 +55,10 @@ func TestWALWriteBlocksUntilDurable(t *testing.T) {
 }
 
 func TestWALConcurrentWrites(t *testing.T) {
-	wal := NewWALWriter(1024)
+	sm, cleanup := setupSegmentManager(t)
+	defer cleanup()
+
+	wal := NewWALWriter(1024, sm)
 	defer wal.Close()
 
 	var wg sync.WaitGroup
@@ -59,7 +84,10 @@ func TestWALConcurrentWrites(t *testing.T) {
 }
 
 func TestWALCloseUnblocksWriters(t *testing.T) {
-	wal := NewWALWriter(1)
+	sm, cleanup := setupSegmentManager(t)
+	defer cleanup()
+
+	wal := NewWALWriter(1, sm)
 
 	go func() {
 		_ = wal.Write(&Log{op: OperationPut, key: []byte("x"), value: []byte("1")})

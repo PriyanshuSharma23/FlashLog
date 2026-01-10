@@ -156,6 +156,8 @@ func (s *diskSegmentManager) idToPath(id int) string {
 }
 
 func (s *diskSegmentManager) RotateSegment() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.active != nil {
 		err := s.active.Close()
 		if err != nil {
@@ -223,6 +225,8 @@ func (s *diskSegmentManager) Sync() error {
 }
 
 func (s *diskSegmentManager) Close() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	err := s.active.Close()
 	if err != nil {
 		return fmt.Errorf("failed to close active file: %w", err)
