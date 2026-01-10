@@ -1,16 +1,14 @@
-// Package segmentmanager provides an interface for writing logs into rotating segments.
+// Package segments provides an interface for writing logs into rotating segments.
 // The user of this module only sees an Active() method to write into; all segment
 // rotation functionality is handled internally by this package.
-package segmentmanager
+package segments
 
 import (
 	"io"
 )
 
-type SegmentManager interface {
-	WriteActive(n int, fn func(w io.Writer)) error
-	Sync() error
-	RotateSegment() error
+type SegmentsWriter interface {
+	Write(n int, fn func(w io.Writer)) error
 	Close() error
 }
 

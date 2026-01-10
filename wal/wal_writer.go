@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/Priyanshu23/FlashLogGo/segmentmanager"
+	"github.com/Priyanshu23/FlashLogGo/segments"
 )
 
 var ErrWALClosed = os.ErrClosed
@@ -15,10 +15,10 @@ type WALWriter struct {
 	ch     chan *Log
 	wg     sync.WaitGroup
 	closed atomic.Bool
-	sm     segmentmanager.SegmentManager
+	sm     segments.SegmentsWriter
 }
 
-func NewWALWriter(buffer int, sm segmentmanager.SegmentManager) *WALWriter {
+func NewWALWriter(buffer int, sm segments.SegmentsWriter) *WALWriter {
 	w := &WALWriter{
 		ch: make(chan *Log, buffer),
 		sm: sm,
@@ -58,7 +58,7 @@ func (w *WALWriter) Close() {
 
 func (w *WALWriter) loop() {
 	for l := range w.ch {
-		_ = w.sm.WriteActive(l.Size(), func(out io.Writer) {
+		_ = w.sm.Write(l.Size(), func(out io.Writer) {
 			_ = l.Encode(out)
 		})
 	}

@@ -1,4 +1,4 @@
-package segmentmanager
+package segments
 
 import (
 	"errors"
@@ -19,7 +19,7 @@ const (
 
 var segmentFileNamePattern = regexp.MustCompile(`^segment-(\d+)\.log$`)
 
-type diskSegmentManager struct {
+type diskSegmentsWriter struct {
 	mu             sync.Mutex
 	active         *os.File
 	activeID       int
@@ -41,7 +41,7 @@ func isDirectoryValid(path string) error {
 	return err
 }
 
-func initializeEmptySegmentDir(baseSM *diskSegmentManager) (*diskSegmentManager, error) {
+func initializeEmptySegmentDir(baseSM *diskSegmentsWriter) (*diskSegmentsWriter, error) {
 	if err := baseSM.RotateSegment(); err != nil {
 		return nil, fmt.Errorf("failed to craete first segment: %w", err)
 	}
@@ -49,16 +49,16 @@ func initializeEmptySegmentDir(baseSM *diskSegmentManager) (*diskSegmentManager,
 	return baseSM, nil
 }
 
-type DiskSegmentManagerOption func(sm *diskSegmentManager)
+type DiskSegmentsWriterOption func(sm *diskSegmentsWriter)
 
-func WithMaxSegmentSize(maxSegmentSize int64) DiskSegmentManagerOption {
-	return func(sm *diskSegmentManager) {
+func WithMaxSegmentSize(maxSegmentSize int64) DiskSegmentsWriterOption {
+	return func(sm *diskSegmentsWriter) {
 		sm.maxSegmentSize = maxSegmentSize
 	}
 }
 
-func NewDiskSegmentManager(dir string, options ...DiskSegmentManagerOption) (*diskSegmentManager, error) {
-	sm := &diskSegmentManager{
+func NewDiskSegmentsWriter(dir string, options ...DiskSegmentsWriterOption) (*diskSegmentsWriter, error) {
+	sm := &diskSegmentsWriter{
 		activeID:       0,
 		dir:            dir,
 		logFileExt:     diskLogFileExt,
@@ -150,12 +150,12 @@ func validateSegmentEntries(entries SegmentEntries) bool {
 	return true
 }
 
-func (s *diskSegmentManager) idToPath(id int) string {
+func (s *diskSegmentsWriter) idToPath(id int) string {
 	filename := fmt.Sprintf("segment-%04d%s", id, s.logFileExt)
 	return filepath.Join(s.dir, filename)
 }
 
-func (s *diskSegmentManager) RotateSegment() error {
+func (s *diskSegmentsWriter) RotateSegment() error {
 	if s.active != nil {
 		err := s.active.Close()
 		if err != nil {
@@ -176,7 +176,7 @@ func (s *diskSegmentManager) RotateSegment() error {
 	return nil
 }
 
-func (s *diskSegmentManager) WriteActive(n int, fn func(w io.Writer)) error {
+func (s *diskSegmentsWriter) Write(n int, fn func(w io.Writer)) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -209,7 +209,7 @@ func (s *diskSegmentManager) WriteActive(n int, fn func(w io.Writer)) error {
 	return nil
 }
 
-func (s *diskSegmentManager) Sync() error {
+func (s *diskSegmentsWriter) Sync() error {
 	if s.active == nil {
 		panic("active file not initialized")
 	}
@@ -222,7 +222,7 @@ func (s *diskSegmentManager) Sync() error {
 	return nil
 }
 
-func (s *diskSegmentManager) Close() error {
+func (s *diskSegmentsWriter) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	err := s.active.Close()

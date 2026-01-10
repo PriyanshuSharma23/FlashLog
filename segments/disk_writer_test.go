@@ -1,4 +1,4 @@
-package segmentmanager
+package segments
 
 import (
 	"fmt"
@@ -12,8 +12,8 @@ import (
 
 const dirName = "./segments"
 
-func setupDiskTests(t *testing.T, options ...DiskSegmentManagerOption) (sm *diskSegmentManager, cleanup func(...bool)) {
-	sm, err := NewDiskSegmentManager(dirName, options...)
+func setupDiskTests(t *testing.T, options ...DiskSegmentsWriterOption) (sm *diskSegmentsWriter, cleanup func(...bool)) {
+	sm, err := NewDiskSegmentsWriter(dirName, options...)
 	if err != nil {
 		t.Fatal("failed to create disk segment manager", err)
 	}
@@ -78,7 +78,7 @@ func TestDiskGetActiveFileWithoutRotation(t *testing.T) {
 	sm, cleanup := setupDiskTests(t, WithMaxSegmentSize(100))
 	defer cleanup()
 
-	err := sm.WriteActive(50, func(w io.Writer) {
+	err := sm.Write(50, func(w io.Writer) {
 		_, err := fmt.Fprintf(w, "whats up")
 		if err != nil {
 			t.Fatal(err)
@@ -119,7 +119,7 @@ func TestDiskGetActiveFileWithRotation(t *testing.T) {
 			defer cleanup()
 
 			for i := 0; i < test.iterations; i++ {
-				err := sm.WriteActive(len(test.content), func(w io.Writer) {
+				err := sm.Write(len(test.content), func(w io.Writer) {
 					_, err := fmt.Fprint(w, test.content)
 					if err != nil {
 						t.Fatal(err)
@@ -151,13 +151,13 @@ func TestConcurrentDiskSegmentWrites(t *testing.T) {
 	var wg sync.WaitGroup
 
 	wg.Go(func() {
-		_ = sm.WriteActive(len(content), func(w io.Writer) {
+		_ = sm.Write(len(content), func(w io.Writer) {
 			_, _ = fmt.Fprint(w, content)
 		})
 	})
 
 	wg.Go(func() {
-		_ = sm.WriteActive(len(content), func(w io.Writer) {
+		_ = sm.Write(len(content), func(w io.Writer) {
 			_, _ = fmt.Fprint(w, content)
 		})
 	})

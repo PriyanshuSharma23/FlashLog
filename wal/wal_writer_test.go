@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Priyanshu23/FlashLogGo/segmentmanager"
+	"github.com/Priyanshu23/FlashLogGo/segments"
 )
 
 const dirName = "wal_writer_test"
 
-func setupSegmentManager(t *testing.T) (segmentmanager.SegmentManager, func()) {
-	sm, err := segmentmanager.NewDiskSegmentManager(dirName)
+func setupSegmentManager(t *testing.T) (segments.SegmentsWriter, func()) {
+	sm, err := segments.NewDiskSegmentsWriter(dirName)
 	if err != nil {
 		t.Fatal(err)
 	}
