@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"iter"
 	"math/rand"
+	"strings"
 )
 
 const maxLevel = 32
@@ -140,25 +141,25 @@ func (sl *SkipList[K, V]) Iterator() iter.Seq[Record[K, V]] {
 	}
 }
 
-func (sl *SkipList[K, V]) print() {
-	if sl.size == 0 {
-		return
-	}
+func (sl *SkipList[K, V]) String() string {
+	var sb strings.Builder
 
-	fmt.Println("===================================")
-	fmt.Printf("SkipList size=%d levels=%d\n", sl.size, sl.levels)
-	fmt.Println("===================================")
+	fmt.Fprintln(&sb, "===================================")
+	fmt.Fprintf(&sb, "SkipList size=%d levels=%d\n", sl.size, sl.levels)
+	fmt.Fprintln(&sb, "===================================")
 
 	// Print each level top-down
 	for level := sl.levels; level >= 0; level-- {
-		fmt.Printf("Level %2d: ", level)
+		fmt.Fprintf(&sb, "Level %2d: ", level)
 
 		x := sl.head.forward[level]
 		for x != nil {
-			fmt.Printf("%v ", x.record.Key)
+			fmt.Fprintf(&sb, "%v ", x.record.Key)
 			x = x.forward[level]
 		}
 		fmt.Println()
 	}
-	fmt.Println("===================================")
+	fmt.Fprintln(&sb, "===================================")
+
+	return sb.String()
 }
