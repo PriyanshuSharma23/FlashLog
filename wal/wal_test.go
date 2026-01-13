@@ -1,4 +1,4 @@
-package main
+package wal
 
 import (
 	"bytes"
@@ -27,10 +27,10 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		name string
 		log  *Log
 	}{
-		{"small", &Log{op: OperationPut, key: []byte("a"), value: []byte("b")}},
-		{"empty", &Log{op: OperationDelete, key: []byte{}, value: []byte{}}},
-		{"binary", &Log{op: OperationPut, key: []byte{0, 1, 2, 3}, value: []byte{9, 8, 7}}},
-		{"large", &Log{op: OperationPut, key: bytes.Repeat([]byte("k"), 1024), value: bytes.Repeat([]byte("v"), 2048)}},
+		{"small", NewLog(OperationPut, []byte("a"), []byte("b"))},
+		{"empty", NewLog(OperationDelete, []byte{}, []byte{})},
+		{"binary", NewLog(OperationPut, []byte{0, 1, 2, 3}, []byte{9, 8, 7})},
+		{"large", NewLog(OperationPut, bytes.Repeat([]byte("k"), 1024), bytes.Repeat([]byte("v"), 2048))},
 	}
 
 	for _, tt := range tests {
@@ -46,9 +46,9 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 					t.Fatalf("decode error: %v", err)
 				}
 
-				if got.op != tt.log.op ||
-					!bytes.Equal(got.key, tt.log.key) ||
-					!bytes.Equal(got.value, tt.log.value) {
+				if got.Op() != tt.log.Op() ||
+					!bytes.Equal(got.Key(), tt.log.Key()) ||
+					!bytes.Equal(got.Value(), tt.log.Value()) {
 					t.Fatalf("mismatch")
 				}
 			})
@@ -58,7 +58,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 
 func TestDecodeDetectsCorruption(t *testing.T) {
 	withTempWAL(t, func(f *os.File) {
-		l := &Log{op: OperationPut, key: []byte("key"), value: []byte("value")}
+		l := NewLog(OperationPut, []byte("key"), []byte("value"))
 		if err := l.Encode(f); err != nil {
 			t.Fatal(err)
 		}
@@ -79,9 +79,9 @@ func TestDecodeDetectsCorruption(t *testing.T) {
 }
 
 func TestDecodeDetectsTruncation(t *testing.T) {
-	l := &Log{op: OperationPut, key: []byte("key"), value: []byte("value")}
+	l := NewLog(OperationPut, []byte("key"), []byte("value"))
 
-	lTotalLength := uint32(4 + 4 + 1 + 4 + len(l.key) + 4 + len(l.value))
+	lTotalLength := uint32(4 + 4 + 1 + 4 + len(l.Key()) + 4 + len(l.Value()))
 
 	for i := 1; i < int(lTotalLength); i++ {
 		withTempWAL(t, func(f *os.File) {
@@ -102,9 +102,9 @@ func TestDecodeDetectsTruncation(t *testing.T) {
 func TestDecodeMultipleRecords(t *testing.T) {
 	withTempWAL(t, func(f *os.File) {
 		records := []*Log{
-			{op: OperationPut, key: []byte("a"), value: []byte("1")},
-			{op: OperationPut, key: []byte("b"), value: []byte("2")},
-			{op: OperationDelete, key: []byte("a"), value: nil},
+			NewLog(OperationPut, []byte("a"), []byte("1")),
+			NewLog(OperationPut, []byte("b"), []byte("2")),
+			NewLog(OperationDelete, []byte("a"), nil),
 		}
 
 		for _, r := range records {
@@ -119,9 +119,9 @@ func TestDecodeMultipleRecords(t *testing.T) {
 			if err != nil {
 				t.Fatalf("record %d: %v", i, err)
 			}
-			if got.op != want.op ||
-				!bytes.Equal(got.key, want.key) ||
-				!bytes.Equal(got.value, want.value) {
+			if got.Op() != want.Op() ||
+				!bytes.Equal(got.Key(), want.Key()) ||
+				!bytes.Equal(got.Value(), want.Value()) {
 				t.Fatalf("record %d mismatch", i)
 			}
 		}

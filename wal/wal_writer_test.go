@@ -1,4 +1,4 @@
-package main
+package wal
 
 import (
 	"fmt"
@@ -10,19 +10,15 @@ import (
 
 func TestWALWriteBlocksUntilDurable(t *testing.T) {
 	dirName := t.TempDir()
-	wal, _ := NewWALWriter(1, dirName)
-	defer wal.Close()
+	w, _ := NewWALWriter(1, dirName)
+	defer w.Close()
 
-	l := &Log{
-		op:    OperationPut,
-		key:   []byte("a"),
-		value: []byte("1"),
-	}
+	l := NewLog(OperationPut, []byte("a"), []byte("1"))
 
 	start := time.Now()
 
 	go func() {
-		if err := wal.Write(l); err != nil {
+		if err := w.Write(l); err != nil {
 			t.Error(err)
 		}
 	}()
@@ -36,7 +32,7 @@ func TestWALWriteBlocksUntilDurable(t *testing.T) {
 
 func TestWALConcurrentWrites(t *testing.T) {
 	dir := t.TempDir()
-	wal, err := NewWALWriter(1, dir)
+	w, err := NewWALWriter(1, dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,12 +44,8 @@ func TestWALConcurrentWrites(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			l := &Log{
-				op:    OperationPut,
-				key:   fmt.Appendf(nil, "k-%d", i),
-				value: fmt.Appendf(nil, "v-%d", i),
-			}
-			err := wal.Write(l)
+			l := NewLog(OperationPut, fmt.Appendf(nil, "k-%d", i), fmt.Appendf(nil, "v-%d", i))
+			err := w.Write(l)
 			if err != nil {
 				fmt.Println(err)
 			}
@@ -61,7 +53,7 @@ func TestWALConcurrentWrites(t *testing.T) {
 	}
 
 	wg.Wait()
-	wal.Close() // Ensure all writes are flushed before reading
+	w.Close() // Ensure all writes are flushed before reading
 
 	reader, err := NewWALReader(dir)
 	if err != nil {
@@ -78,7 +70,7 @@ func TestWALConcurrentWrites(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		seen[string(l.key)] = true
+		seen[string(l.Key())] = true
 	}
 
 	if len(seen) != N {
@@ -93,20 +85,20 @@ func TestWALConcurrentWrites(t *testing.T) {
 
 func TestWALCloseUnblocksWriters(t *testing.T) {
 	dirName := t.TempDir()
-	wal, _ := NewWALWriter(1, dirName)
-	defer wal.Close()
+	w, _ := NewWALWriter(1, dirName)
+	defer w.Close()
 
 	go func() {
-		_ = wal.Write(&Log{op: OperationPut, key: []byte("x"), value: []byte("1")})
+		_ = w.Write(NewLog(OperationPut, []byte("x"), []byte("1")))
 	}()
 
 	time.Sleep(5 * time.Millisecond)
-	wal.Close()
+	w.Close()
 
 	done := make(chan struct{})
 
 	go func() {
-		_ = wal.Write(&Log{op: OperationPut, key: []byte("y"), value: []byte("2")})
+		_ = w.Write(NewLog(OperationPut, []byte("y"), []byte("2")))
 		close(done)
 	}()
 

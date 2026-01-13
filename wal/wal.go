@@ -1,4 +1,4 @@
-package main
+package wal
 
 import (
 	"encoding/binary"
@@ -26,6 +26,30 @@ type Log struct {
 	key   []byte
 	value []byte
 	crc   uint32
+}
+
+// NewLog creates a new WAL log entry.
+func NewLog(op Operation, key, value []byte) *Log {
+	return &Log{
+		op:    op,
+		key:   key,
+		value: value,
+	}
+}
+
+// Op returns the operation type.
+func (l *Log) Op() Operation {
+	return l.op
+}
+
+// Key returns the key bytes.
+func (l *Log) Key() []byte {
+	return l.key
+}
+
+// Value returns the value bytes.
+func (l *Log) Value() []byte {
+	return l.value
 }
 
 func (l *Log) String() string {
