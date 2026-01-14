@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Priyanshu23/FlashLogGo/types"
 )
 
 func TestWALWriteBlocksUntilDurable(t *testing.T) {
@@ -13,7 +15,7 @@ func TestWALWriteBlocksUntilDurable(t *testing.T) {
 	w, _ := NewWALWriter(1, dirName)
 	defer w.Close()
 
-	l := NewLog(OperationPut, []byte("a"), []byte("1"))
+	l := NewLog(types.OperationPut, []byte("a"), []byte("1"))
 
 	start := time.Now()
 
@@ -44,7 +46,7 @@ func TestWALConcurrentWrites(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			l := NewLog(OperationPut, fmt.Appendf(nil, "k-%d", i), fmt.Appendf(nil, "v-%d", i))
+			l := NewLog(types.OperationPut, fmt.Appendf(nil, "k-%d", i), fmt.Appendf(nil, "v-%d", i))
 			err := w.Write(l)
 			if err != nil {
 				fmt.Println(err)
@@ -89,7 +91,7 @@ func TestWALCloseUnblocksWriters(t *testing.T) {
 	defer w.Close()
 
 	go func() {
-		_ = w.Write(NewLog(OperationPut, []byte("x"), []byte("1")))
+		_ = w.Write(NewLog(types.OperationPut, []byte("x"), []byte("1")))
 	}()
 
 	time.Sleep(5 * time.Millisecond)
@@ -98,7 +100,7 @@ func TestWALCloseUnblocksWriters(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		_ = w.Write(NewLog(OperationPut, []byte("y"), []byte("2")))
+		_ = w.Write(NewLog(types.OperationPut, []byte("y"), []byte("2")))
 		close(done)
 	}()
 

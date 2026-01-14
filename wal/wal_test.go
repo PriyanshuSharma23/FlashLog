@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"testing"
+
+	"github.com/Priyanshu23/FlashLogGo/types"
 )
 
 func withTempWAL(t *testing.T, fn func(f *os.File)) {
@@ -27,10 +29,10 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 		name string
 		log  *Log
 	}{
-		{"small", NewLog(OperationPut, []byte("a"), []byte("b"))},
-		{"empty", NewLog(OperationDelete, []byte{}, []byte{})},
-		{"binary", NewLog(OperationPut, []byte{0, 1, 2, 3}, []byte{9, 8, 7})},
-		{"large", NewLog(OperationPut, bytes.Repeat([]byte("k"), 1024), bytes.Repeat([]byte("v"), 2048))},
+		{"small", NewLog(types.OperationPut, []byte("a"), []byte("b"))},
+		{"empty", NewLog(types.OperationDelete, []byte{}, []byte{})},
+		{"binary", NewLog(types.OperationPut, []byte{0, 1, 2, 3}, []byte{9, 8, 7})},
+		{"large", NewLog(types.OperationPut, bytes.Repeat([]byte("k"), 1024), bytes.Repeat([]byte("v"), 2048))},
 	}
 
 	for _, tt := range tests {
@@ -58,7 +60,7 @@ func TestEncodeDecodeRoundTrip(t *testing.T) {
 
 func TestDecodeDetectsCorruption(t *testing.T) {
 	withTempWAL(t, func(f *os.File) {
-		l := NewLog(OperationPut, []byte("key"), []byte("value"))
+		l := NewLog(types.OperationPut, []byte("key"), []byte("value"))
 		if err := l.Encode(f); err != nil {
 			t.Fatal(err)
 		}
@@ -79,7 +81,7 @@ func TestDecodeDetectsCorruption(t *testing.T) {
 }
 
 func TestDecodeDetectsTruncation(t *testing.T) {
-	l := NewLog(OperationPut, []byte("key"), []byte("value"))
+	l := NewLog(types.OperationPut, []byte("key"), []byte("value"))
 
 	lTotalLength := uint32(4 + 4 + 1 + 4 + len(l.Key()) + 4 + len(l.Value()))
 
@@ -102,9 +104,9 @@ func TestDecodeDetectsTruncation(t *testing.T) {
 func TestDecodeMultipleRecords(t *testing.T) {
 	withTempWAL(t, func(f *os.File) {
 		records := []*Log{
-			NewLog(OperationPut, []byte("a"), []byte("1")),
-			NewLog(OperationPut, []byte("b"), []byte("2")),
-			NewLog(OperationDelete, []byte("a"), nil),
+			NewLog(types.OperationPut, []byte("a"), []byte("1")),
+			NewLog(types.OperationPut, []byte("b"), []byte("2")),
+			NewLog(types.OperationDelete, []byte("a"), nil),
 		}
 
 		for _, r := range records {

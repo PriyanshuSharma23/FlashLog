@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
+
+	"github.com/Priyanshu23/FlashLogGo/types"
 )
 
 const (
@@ -14,22 +16,15 @@ const (
 
 var ErrCorruptWAL = fmt.Errorf("corrupt WAL")
 
-type Operation int
-
-const (
-	OperationPut Operation = iota
-	OperationDelete
-)
-
 type Log struct {
-	op    Operation
+	op    types.Operation
 	key   []byte
 	value []byte
 	crc   uint32
 }
 
 // NewLog creates a new WAL log entry.
-func NewLog(op Operation, key, value []byte) *Log {
+func NewLog(op types.Operation, key, value []byte) *Log {
 	return &Log{
 		op:    op,
 		key:   key,
@@ -38,7 +33,7 @@ func NewLog(op Operation, key, value []byte) *Log {
 }
 
 // Op returns the operation type.
-func (l *Log) Op() Operation {
+func (l *Log) Op() types.Operation {
 	return l.op
 }
 
@@ -54,13 +49,6 @@ func (l *Log) Value() []byte {
 
 func (l *Log) String() string {
 	return fmt.Sprintf("[crc: ] [operation: %d] [key: %s] [value: %s]", l.op, l.key, l.value)
-}
-
-// Size Binary format:
-// | CRC (4) | TOTAL_LEN (4) | TYPE (1) | KEY_LEN (4) | KEY | VAL_LEN (4) | VALUE |
-// CRC = checksum(TOTAL_LEN | PAYLOAD)
-func (l *Log) Size() int {
-	return 4 + 4 + 1 + 4 + len(l.key) + 4 + len(l.value)
 }
 
 // Encode Binary format:
@@ -182,7 +170,7 @@ func Decode(r io.Reader) (*Log, error) {
 	var l Log
 	l.crc = storedCRC
 
-	l.op = Operation(payload[pos])
+	l.op = types.Operation(payload[pos])
 	pos++
 
 	keyLen := binary.LittleEndian.Uint32(payload[pos:])
