@@ -103,7 +103,7 @@
 //
 //	   1 │BLOOM FILTER:
 //	   2 │+---------------------------------------------------------------+
-//	   3 │| Num Hash Functions (1 byte)                                   |
+//	   3 │| Num Hash Functions (4 byte)                                   |
 //	   4 │| Bit Array Size (4 bytes)                                      |
 //	   5 │| Bit Array (variable)                                          |
 //	   6 │| CRC32 (4 bytes)                                               |
@@ -120,6 +120,7 @@ import (
 	"path/filepath"
 
 	"github.com/Priyanshu23/FlashLogGo/types"
+	"github.com/bits-and-blooms/bloom/v3"
 )
 
 type SSTWriter interface {
@@ -145,6 +146,7 @@ type diskSSTWriter struct {
 	index             indexBlock
 	minKey            []byte
 	maxKey            []byte
+	bloomFilter       *bloom.BloomFilter
 }
 
 type dataEntry struct {
@@ -173,6 +175,13 @@ type indexBlock struct {
 	entries    []indexEntry
 }
 
+type bloomFilter struct {
+	m        uint
+	k        uint
+	bitArray []byte
+	crc      uint32
+}
+
 type footer struct {
 	indexOffset  int64
 	indexSize    int
@@ -186,6 +195,7 @@ type footer struct {
 type File struct {
 	dataBlocks []dataBlock
 	index      indexBlock
+	bloom      bloomFilter
 	footer     footer
 }
 
@@ -195,11 +205,14 @@ func NewDiskSSTWriter(dir string) (SSTWriter, error) {
 		return nil, fmt.Errorf("failed to create SST file: %w", err)
 	}
 
+	filter := bloom.NewWithEstimates(100000, 0.01)
+
 	return &diskSSTWriter{
 		dir:               dir,
 		currDataBlockSize: 0,
 		maxDataBlockSize:  defaultMaxDataBlockSize,
 		sstFile:           file,
+		bloomFilter:       filter,
 	}, nil
 }
 
@@ -289,6 +302,8 @@ func (d *diskSSTWriter) Write(
 	d.currDataBlock.entries = append(d.currDataBlock.entries, entry)
 	d.currDataBlockSize += entry.size()
 
+	d.bloomFilter.Add(key)
+
 	return nil
 }
 
@@ -313,7 +328,44 @@ func (d *diskSSTWriter) writeIndexBlock() (int64, uint32, error) {
 	return start, uint32(end - start), nil
 }
 
-func (d *diskSSTWriter) writeFooter(indexOffset int64, indexSize uint32) error {
+func (d *diskSSTWriter) writeBloomFilter() (int64, uint32, error) {
+	start, err := d.sstFile.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to seek start of file: %w", err)
+	}
+
+	crc := crc32.NewIEEE()
+	mw := io.MultiWriter(d.sstFile, crc)
+
+	err = binary.Write(mw, binary.LittleEndian, uint32(d.bloomFilter.K()))
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to write bloom filter hash count: %w", err)
+	}
+
+	err = binary.Write(mw, binary.LittleEndian, uint32(d.bloomFilter.Cap()))
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to write bloom filter size: %w", err)
+	}
+
+	_, err = d.bloomFilter.WriteTo(mw)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to write bloom filter bit array: %w", err)
+	}
+
+	err = binary.Write(d.sstFile, binary.LittleEndian, crc.Sum32())
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to write bloom filter crc: %w", err)
+	}
+
+	end, err := d.sstFile.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to seek end of file: %w", err)
+	}
+
+	return start, uint32(end - start), nil
+}
+
+func (d *diskSSTWriter) writeFooter(indexOffset int64, indexSize uint32, bloomFilterOffset int64, bloomFilterSize uint32) error {
 	footerStart, _ := d.sstFile.Seek(0, io.SeekCurrent)
 
 	crc := crc32.NewIEEE()
@@ -322,6 +374,16 @@ func (d *diskSSTWriter) writeFooter(indexOffset int64, indexSize uint32) error {
 	// Index location
 	_ = binary.Write(mw, binary.LittleEndian, indexOffset)
 	_ = binary.Write(mw, binary.LittleEndian, indexSize)
+
+	err := binary.Write(mw, binary.LittleEndian, bloomFilterOffset)
+	if err != nil {
+		return fmt.Errorf("failed to write bloom filter offset: %w", err)
+	}
+
+	err = binary.Write(mw, binary.LittleEndian, bloomFilterSize)
+	if err != nil {
+		return fmt.Errorf("failed to write bloom filter size: %w", err)
+	}
 
 	// Min key
 	minKeyOffset := footerStart + 8 + 4 + 8 + 2 + 8 + 2
@@ -355,5 +417,10 @@ func (d *diskSSTWriter) Flush() error {
 		return err
 	}
 
-	return d.writeFooter(indexOffset, indexSize)
+	bloomFilterOffset, bloomFilterSize, err := d.writeBloomFilter()
+	if err != nil {
+		return err
+	}
+
+	return d.writeFooter(indexOffset, indexSize, bloomFilterOffset, bloomFilterSize)
 }
