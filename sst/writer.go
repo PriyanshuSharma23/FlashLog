@@ -386,7 +386,12 @@ func (d *diskSSTWriter) writeFooter(indexOffset int64, indexSize uint32, bloomFi
 	}
 
 	// Min key
-	minKeyOffset := footerStart + 8 + 4 + 8 + 2 + 8 + 2
+	minKeyOffset := footerStart +
+		8 + 4 + // index
+		8 + 4 + // bloom
+		8 + 2 + // min key offset + len
+		8 + 2 // max key offset + len
+
 	_ = binary.Write(mw, binary.LittleEndian, minKeyOffset)
 	_ = binary.Write(mw, binary.LittleEndian, uint16(len(d.minKey)))
 
