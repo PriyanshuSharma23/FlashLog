@@ -38,6 +38,10 @@ func NewSkipListMemtable[K ordered, V any]() *SkipList[K, V] {
 	return &sl
 }
 
+func (sl *SkipList[K, V]) Size() int {
+	return sl.size
+}
+
 func (sl *SkipList[K, V]) Get(key K) (V, bool) {
 	curr := sl.head
 

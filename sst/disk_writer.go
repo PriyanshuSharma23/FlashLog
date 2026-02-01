@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Priyanshu23/FlashLogGo/types"
 	"github.com/bits-and-blooms/bloom/v3"
 )
 
@@ -84,7 +83,6 @@ func (d *diskSSTWriter) appendDataBlock() error {
 	for _, e := range d.currDataBlock.entries {
 		_ = binary.Write(mw, binary.LittleEndian, uint32(len(e.key)))
 		_ = binary.Write(mw, binary.LittleEndian, uint32(len(e.value)))
-		_ = binary.Write(mw, binary.LittleEndian, uint8(e.op))
 		_, _ = mw.Write(e.key)
 		_, _ = mw.Write(e.value)
 	}

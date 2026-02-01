@@ -1,39 +1,47 @@
 package sst
 
 import (
+	"os"
+	"path"
 	"testing"
-
-	"github.com/Priyanshu23/FlashLogGo/types"
 )
 
 func TestDataBlockReadWrite(t *testing.T) {
-	dir := "check_sst"
-	writer, err := NewDiskSSTWriter(dir)
+	tempDir := t.TempDir()
+
+	pathName := path.Join(tempDir, filename)
+
+	_, err := os.Create(pathName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = writer.Write(types.OperationPut, []byte("key1"), []byte("value1"))
+	writer, err := NewDiskSSTWriter(tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = writer.Write(types.OperationPut, []byte("key2"), []byte("value1"))
+
+	err = writer.Write([]byte("key1"), []byte("value1"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = writer.Write(types.OperationPut, []byte("key3"), []byte("value1"))
+	err = writer.Write([]byte("key2"), []byte("value1"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = writer.Write(types.OperationPut, []byte("key4"), []byte("value1"))
+	err = writer.Write([]byte("key3"), []byte("value1"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = writer.Write(types.OperationPut, []byte("key5"), []byte("value1"))
+	err = writer.Write([]byte("key4"), []byte("value1"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = writer.Write(types.OperationPut, []byte("key6"), []byte("value1"))
+	err = writer.Write([]byte("key5"), []byte("value1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = writer.Write([]byte("key6"), []byte("value1"))
 	if err != nil {
 		t.Fatal(err)
 	}

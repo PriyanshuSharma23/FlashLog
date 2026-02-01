@@ -16,8 +16,9 @@ type Record[K ordered, V any] struct {
 }
 
 type Memtable[K ordered, V any] interface {
+	Get(key K) (V, bool)
 	Put(key K, value V)
-	Get(key K) V
 	Delete(key K)
+	Size() int
 	Iterator() iter.Seq[Record[K, V]]
 }
