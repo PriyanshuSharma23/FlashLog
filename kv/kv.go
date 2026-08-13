@@ -74,7 +74,6 @@ func (kv *KV) flushMemTable() error {
 	for item := range kv.m.Iterator() {
 		fmt.Println("Record:", item)
 		err := kv.sst.Write([]byte(item.Key), []byte(item.Value.ToBytes()))
-
 		if err != nil {
 			return fmt.Errorf("failed to write into SST: %w", err)
 		}

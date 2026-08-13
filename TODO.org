@@ -1,0 +1,12 @@
+#+title: Todo
+
+* Open tasks:
+1. Add WAL in kv
+2. Add directory manager
+3. Add recovery with WAL in kv module 
+   
+* Directory Manager
+** A directory manager will be responsible for managing the file structure of the entire kv logger.
+** Key features
+1. Cross platform dir management of WAL, and SST files
+2. Will contain the MANIFEST file which dictates the file creation/deletion logs. 
