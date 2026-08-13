@@ -5,16 +5,8 @@
 #include "slog.hpp"
 #include "tokenizer.hpp"
 
-#include <filesystem>
 #include <iostream>
 #include <string_view>
-
-const uint64_t MAX_SEGMENT_SIZE =
-    static_cast<const uint64_t>(32 * 1024 * 1024); // 32MB
-
-Config cfg = getConfig();
-std::filesystem::path DATA_PATH_DIR = cfg.data;
-std::filesystem::path SEGMENTS_DIR = DATA_PATH_DIR / "segments";
 
 LogStore logStore;
 
@@ -24,28 +16,6 @@ enum Command : std::uint8_t {
   GET,
   INVALID,
 };
-
-static void createDirectory(const std::filesystem::path &p) {
-  std::error_code ec;
-  if (std::filesystem::create_directory(p, ec)) {
-    LOG_TRACE << "Directory created: " << p << "\n";
-  } else if (ec) {
-    throw std::filesystem::filesystem_error("Failed to create directory", p,
-                                            ec);
-  }
-}
-
-static void initializeDataDir() {
-  if (!std::filesystem::exists(DATA_PATH_DIR) ||
-      !std::filesystem::is_directory(DATA_PATH_DIR)) {
-    createDirectory(DATA_PATH_DIR);
-  }
-
-  if (!std::filesystem::exists(SEGMENTS_DIR) ||
-      !std::filesystem::is_directory(SEGMENTS_DIR)) {
-    createDirectory(SEGMENTS_DIR);
-  }
-}
 
 static Command parseCommand(std::string_view &input) {
   const auto cmd = nextToken(input);
@@ -80,8 +50,6 @@ static void handleGetCommand(std::string_view &input) {
 
 void runCli() {
   LOG_TRACE << "Detected platform: " << platformName() << "\n";
-
-  initializeDataDir();
 
   bool cliRunning = true;
   std::string userInput;

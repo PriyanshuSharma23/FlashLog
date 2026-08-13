@@ -1,16 +1,16 @@
 #include "config.hpp"
 #include <cstdlib>
 
-Config getConfig() {
+auto getConfig() -> Config {
 #ifdef _WIN32
   auto base = std::filesystem::path(getenv("APPDATA")) / "FlashLog";
 #else
   auto base = std::filesystem::path(getenv("HOME")) / ".local/share/FlashLog";
 #endif
-  return {base, base};
+  return {.config = base, .data = base};
 }
 
-const char *platformName() {
+auto platformName() -> const char * {
 #ifdef _WIN32
   return "windows";
 #else

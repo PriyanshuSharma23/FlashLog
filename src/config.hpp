@@ -6,5 +6,5 @@ struct Config {
   std::filesystem::path data;
 };
 
-Config getConfig();
-const char *platformName();
+auto getConfig() -> Config;
+auto platformName() -> const char *;

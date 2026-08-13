@@ -1,4 +1,5 @@
 #include "logstore.hpp"
+#include "index.hpp"
 #include "slog.hpp"
 #include "tokenizer.hpp"
 
@@ -8,74 +9,43 @@
 #include <fstream>
 #include <iostream>
 #include <string_view>
+#include <unordered_map>
 
 LogStore::LogStore() = default;
 
-void LogStore::snapshotIndex() {
-  std::error_code ec;
-  const auto currentLogFileSize = std::filesystem::file_size(LOG_FILE, ec);
-  if (ec) {
-    throw std::filesystem::filesystem_error("Failed to get log file size",
-                                            LOG_FILE, ec);
-  }
-
-  if (currentLogFileSize - lastIndexSnapshotRefresh <
-      INDEX_SNAPSHOT_REFRESH_THRESHOLD) {
-    LOG_TRACE << "Snapshotindex threshold not reached, difference: "
-              << currentLogFileSize - lastIndexSnapshotRefresh << "\n";
-    return;
-  }
-
-  auto tempIndexFilePath = INDEX_FILE;
-  tempIndexFilePath += ".tmp";
-
-  std::ofstream tempIndexFile(tempIndexFilePath,
-                              std::ios::trunc | std::ios::binary);
-
-  lastIndexSnapshotRefresh = currentLogFileSize;
-
-  for (const auto &[key, index] : segmentIndex) {
-    tempIndexFile << key << " " << index.byteOffset << "\n";
-  }
-
-  tempIndexFile.flush();
-  tempIndexFile.close();
-
-  std::filesystem::rename(tempIndexFilePath, INDEX_FILE);
-
-  LOG_TRACE << "Index snapshot created\n";
-}
-
 void LogStore::set(const std::string &key, const std::string &value) {
+  auto &segment = segments.getCurrentSegment();
   LOG_TRACE << "Set command: " << key << " = " << value << "\n";
-  LOG_TRACE << "Log file path: " << LOG_FILE << "\n";
+  LOG_TRACE << "Log file path: " << segment.getLogFilePath() << "\n";
 
-  std::ofstream logFile(LOG_FILE, std::ios::app | std::ios::binary);
+  std::ofstream logFile(segment.getLogFilePath(),
+                        std::ios::app | std::ios::binary);
   if (!logFile)
     throw std::runtime_error("open failed");
 
-  const auto offset = std::filesystem::file_size(LOG_FILE);
+  const auto offset = std::filesystem::file_size(segment.getLogFilePath());
   std::string log = "SET " + key + " " + value + "\n";
 
   logFile.write(log.c_str(), (long long)log.size());
   logFile.flush();
 
-  segmentIndex.insert_or_assign(key, Index{.byteOffset = offset, .key = key});
+  segment.index.try_emplace(key, offset, key);
   LOG_TRACE << "Offset: " << offset << "\n";
 
-  snapshotIndex();
+  segments.snapshotIndex();
 }
 
 auto LogStore::get(const std::string &key) -> std::string {
+  auto &segment = segments.getCurrentSegment();
   LOG_TRACE << "Get command: " << key << "\n";
 
-  std::ifstream logFile(LOG_FILE, std::ios::binary);
+  std::ifstream logFile(segment.getLogFilePath(), std::ios::binary);
 
   if (!logFile)
     throw std::runtime_error("open failed");
 
-  auto indexEntry = segmentIndex.find(key);
-  if (indexEntry == segmentIndex.end()) {
+  auto indexEntry = segment.index.find(key);
+  if (indexEntry == segment.index.end()) {
     throw std::runtime_error("Key not found");
   }
 
